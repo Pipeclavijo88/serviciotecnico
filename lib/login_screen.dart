@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'home_screen.dart'; // Importamos la pantalla principal
+import 'main_menu_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -47,10 +47,9 @@ class _LoginScreenState extends State<LoginScreen> {
           SnackBar(content: Text('¡Bienvenido, rol: $username!')),
         );
 
-        // Redirección inmediata a la pantalla principal
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const HomeScreen()),
+          MaterialPageRoute(builder: (context) => const MainMenuScreen()),
         );
       }
     } on AuthException catch (_) {
@@ -96,19 +95,17 @@ class _LoginScreenState extends State<LoginScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Inyección del logo de Motores y Puertas cargado desde Supabase Storage
               Image.network(
                 'https://iqwvumnftzdtbujdbeqp.supabase.co/storage/v1/object/public/assets/logo.png',
                 height: 120,
                 fit: BoxFit.contain,
                 errorBuilder: (context, error, stackTrace) {
-                  // Respaldo visual si el dispositivo no tiene internet al abrir la app
                   return const Icon(Icons.build_circle, size: 64, color: Colors.blue);
                 },
               ),
               const SizedBox(height: 16),
               const Text(
-                'SERVICIO TÉCNICO MYP',
+                'SISTEMA DE GESTIÓN MYP',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.blue),
               ),

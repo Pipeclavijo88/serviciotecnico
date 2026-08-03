@@ -36,6 +36,10 @@ dependencies:
   cupertino_icons: ^1.0.8
   supabase_flutter: ^2.16.0
   image_picker: ^1.2.3
+  flutter_image_compress: ^2.2.0
+  excel: ^4.0.0
+  pdf: ^3.11.0
+  printing: ^5.13.0
 
 dev_dependencies:
   flutter_test:
