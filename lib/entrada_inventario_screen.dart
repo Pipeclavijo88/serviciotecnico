@@ -19,6 +19,8 @@ class _EntradaInventarioScreenState extends State<EntradaInventarioScreen> {
   final _observacionesController = TextEditingController();
 
   List<Map<String, dynamic>> _productosDisponibles = [];
+  List<String> _listaProveedores = [];
+  List<String> _listaPersonal = [];
   final List<Map<String, dynamic>> _itemsEntrada = [];
 
   final _busquedaProductoController = TextEditingController();
@@ -43,7 +45,15 @@ class _EntradaInventarioScreenState extends State<EntradaInventarioScreen> {
   @override
   void initState() {
     super.initState();
-    _cargarProductos();
+    _cargarDatosIniciales();
+  }
+
+  Future<void> _cargarDatosIniciales() async {
+    await Future.wait([
+      _cargarProductos(),
+      _cargarProveedores(),
+      _cargarPersonal(),
+    ]);
   }
 
   Future<void> _cargarProductos() async {
@@ -59,6 +69,36 @@ class _EntradaInventarioScreenState extends State<EntradaInventarioScreen> {
       }
     } catch (e) {
       debugPrint('Error al cargar productos: $e');
+    }
+  }
+
+  Future<void> _cargarProveedores() async {
+    try {
+      final data = await _supabase.from('proveedores').select('nombre').order('nombre');
+      if (mounted) {
+        setState(() {
+          _listaProveedores = List<String>.from(
+            data.map((item) => (item['nombre'] ?? '').toString()).where((n) => n.isNotEmpty)
+          );
+        });
+      }
+    } catch (e) {
+      debugPrint('Error al cargar proveedores: $e');
+    }
+  }
+
+  Future<void> _cargarPersonal() async {
+    try {
+      final data = await _supabase.from('personal_bodega').select('nombre').order('nombre');
+      if (mounted) {
+        setState(() {
+          _listaPersonal = List<String>.from(
+            data.map((item) => (item['nombre'] ?? '').toString()).where((n) => n.isNotEmpty)
+          );
+        });
+      }
+    } catch (e) {
+      debugPrint('Error al cargar personal de bodega: $e');
     }
   }
 
@@ -212,13 +252,18 @@ class _EntradaInventarioScreenState extends State<EntradaInventarioScreen> {
       }
 
       final resMov = await _supabase.from('movimientos_inventario').insert({
-        'tipo': 'ENTRADA',
-        'subtipo': _tipoEntrada,
+        'tipo_movimiento': 'Entrada',
+        'canal_atencion': _tipoEntrada,
         'proveedor_causa': _proveedorController.text.trim(),
+        'proveedor': _proveedorController.text.trim(),
+        'numero_factura': _facturaController.text.trim(),
         'factura_remision': _facturaController.text.trim(),
         'encargado_separacion': _recibidoPorController.text.trim(),
+        'entregado_a': _recibidoPorController.text.trim(),
+        'recibido_por': _recibidoPorController.text.trim(),
         'observaciones': _observacionesController.text.trim(),
         'imagen_url': imagenUrl,
+        'foto_url': imagenUrl,
       }).select().single();
 
       final movId = resMov['id'];
@@ -292,10 +337,32 @@ class _EntradaInventarioScreenState extends State<EntradaInventarioScreen> {
 
                   Row(
                     children: [
+                      // AUTOCOMPLETADO DE PROVEEDOR
                       Expanded(
-                        child: TextField(
-                          controller: _proveedorController,
-                          decoration: const InputDecoration(labelText: 'Proveedor / Causa', border: OutlineInputBorder()),
+                        child: Autocomplete<String>(
+                          initialValue: TextEditingValue(text: _proveedorController.text),
+                          optionsBuilder: (TextEditingValue textEditingValue) {
+                            if (textEditingValue.text.isEmpty) return const Iterable<String>.empty();
+                            return _listaProveedores.where((String option) {
+                              return option.toLowerCase().contains(textEditingValue.text.toLowerCase());
+                            });
+                          },
+                          onSelected: (String selection) {
+                            _proveedorController.text = selection;
+                          },
+                          fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
+                            textEditingController.addListener(() {
+                              _proveedorController.text = textEditingController.text;
+                            });
+                            return TextField(
+                              controller: textEditingController,
+                              focusNode: focusNode,
+                              decoration: const InputDecoration(
+                                labelText: 'Proveedor / Causa',
+                                border: OutlineInputBorder(),
+                              ),
+                            );
+                          },
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -308,9 +375,32 @@ class _EntradaInventarioScreenState extends State<EntradaInventarioScreen> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  TextField(
-                    controller: _recibidoPorController,
-                    decoration: const InputDecoration(labelText: 'Recibido por (Técnico/Bodeguero)', border: OutlineInputBorder()),
+
+                  // AUTOCOMPLETADO DE RECIBIDO POR (PERSONAL)
+                  Autocomplete<String>(
+                    initialValue: TextEditingValue(text: _recibidoPorController.text),
+                    optionsBuilder: (TextEditingValue textEditingValue) {
+                      if (textEditingValue.text.isEmpty) return const Iterable<String>.empty();
+                      return _listaPersonal.where((String option) {
+                        return option.toLowerCase().contains(textEditingValue.text.toLowerCase());
+                      });
+                    },
+                    onSelected: (String selection) {
+                      _recibidoPorController.text = selection;
+                    },
+                    fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
+                      textEditingController.addListener(() {
+                        _recibidoPorController.text = textEditingController.text;
+                      });
+                      return TextField(
+                        controller: textEditingController,
+                        focusNode: focusNode,
+                        decoration: const InputDecoration(
+                          labelText: 'Recibido por (Técnico/Bodeguero)',
+                          border: OutlineInputBorder(),
+                        ),
+                      );
+                    },
                   ),
                   const SizedBox(height: 20),
 
