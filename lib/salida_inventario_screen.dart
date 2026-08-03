@@ -14,7 +14,8 @@ class _SalidaInventarioScreenState extends State<SalidaInventarioScreen> {
   final _supabase = Supabase.instance.client;
   final _formKey = GlobalKey<FormState>();
 
-  // Controladores de texto para mantener los valores sin borrarse al reconstruir
+  // Controladores de texto
+  final _clienteCtrl = TextEditingController();
   final _encargadoSeparacionCtrl = TextEditingController();
   final _entregadoACtrl = TextEditingController();
   final _detalleMedioEnvioCtrl = TextEditingController();
@@ -43,6 +44,7 @@ class _SalidaInventarioScreenState extends State<SalidaInventarioScreen> {
 
   @override
   void dispose() {
+    _clienteCtrl.dispose();
     _encargadoSeparacionCtrl.dispose();
     _entregadoACtrl.dispose();
     _detalleMedioEnvioCtrl.dispose();
@@ -54,8 +56,8 @@ class _SalidaInventarioScreenState extends State<SalidaInventarioScreen> {
   Future<void> _cargarDatosIniciales() async {
     setState(() => _cargando = true);
     try {
-      final resClientes = await _supabase.from('clientes').select();
-      final resProductos = await _supabase.from('productos').select();
+      final resClientes = await _supabase.from('clientes').select('id, nombre, tipo_cliente').order('nombre');
+      final resProductos = await _supabase.from('productos').select().order('nombre');
 
       if (mounted) {
         setState(() {
@@ -75,11 +77,17 @@ class _SalidaInventarioScreenState extends State<SalidaInventarioScreen> {
   }
 
   Future<void> _crearClienteAlVuelo(String nombreIngresado) async {
+    final nombreTrim = nombreIngresado.trim();
+    if (nombreTrim.isEmpty) {
+      _mostrarSnackBar('Ingresa un nombre de cliente válido.');
+      return;
+    }
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Cliente no registrado'),
-        content: Text('El cliente "$nombreIngresado" no existe. ¿Deseas registrarlo en la base de datos?'),
+        content: Text('El cliente "$nombreTrim" no existe. ¿Deseas registrarlo en la base de datos?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
           ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Registrar')),
@@ -90,18 +98,19 @@ class _SalidaInventarioScreenState extends State<SalidaInventarioScreen> {
     if (confirm == true) {
       try {
         final nuevo = await _supabase.from('clientes').insert({
-          'nombre': nombreIngresado,
+          'nombre': nombreTrim,
           'tipo_cliente': _canalAtencion == 'Instalador' ? 'Instalador' : 'Cliente Final',
         }).select().single();
 
-        final resClientes = await _supabase.from('clientes').select();
+        final resClientes = await _supabase.from('clientes').select('id, nombre, tipo_cliente').order('nombre');
         
         if (mounted) {
           setState(() {
             _listaClientes = List<Map<String, dynamic>>.from(resClientes);
             _clienteSeleccionado = nuevo;
+            _clienteCtrl.text = nuevo['nombre'];
           });
-          _mostrarSnackBar('Cliente registrado con éxito.');
+          _mostrarSnackBar('Cliente "$nombreTrim" registrado con éxito.');
         }
       } catch (e) {
         if (mounted) _mostrarSnackBar('Error al registrar cliente: $e');
@@ -209,7 +218,7 @@ class _SalidaInventarioScreenState extends State<SalidaInventarioScreen> {
                     'stock_actual': 0,
                   }).select().single();
 
-                  final resProductos = await _supabase.from('productos').select();
+                  final resProductos = await _supabase.from('productos').select().order('nombre');
 
                   if (ctx.mounted) Navigator.pop(ctx);
                   
@@ -303,15 +312,45 @@ class _SalidaInventarioScreenState extends State<SalidaInventarioScreen> {
       return;
     }
 
+    final nombreClienteTxt = _clienteCtrl.text.trim();
+    if (_canalAtencion != 'Consumo Interno' && nombreClienteTxt.isEmpty) {
+      _mostrarSnackBar('Por favor selecciona o ingresa el nombre del cliente.');
+      return;
+    }
+
     setState(() => _cargando = true);
     try {
+      // 1. Gestión inteligente del cliente antes de guardar el movimiento
+      if (_canalAtencion != 'Consumo Interno' && nombreClienteTxt.isNotEmpty) {
+        // Buscar si existe en la lista cargada
+        final coincidencia = _listaClientes.firstWhere(
+          (c) => (c['nombre'] ?? '').toString().toLowerCase() == nombreClienteTxt.toLowerCase(),
+          orElse: () => {},
+        );
+
+        if (coincidencia.isNotEmpty) {
+          _clienteSeleccionado = coincidencia;
+        } else {
+          // Si no existe, lo insertamos en la tabla clientes
+          final nuevoCliente = await _supabase.from('clientes').insert({
+            'nombre': nombreClienteTxt,
+            'tipo_cliente': _canalAtencion == 'Instalador' ? 'Instalador' : 'Cliente Final',
+          }).select().single();
+          _clienteSeleccionado = nuevoCliente;
+        }
+      }
+
+      final nombreFinalGuardar = _canalAtencion == 'Consumo Interno' ? 'Consumo Interno' : nombreClienteTxt;
+
+      // 2. Insertar encabezado del movimiento en Supabase
       final mov = await _supabase.from('movimientos_inventario').insert({
         'tipo_movimiento': 'Salida',
         'canal_atencion': _canalAtencion,
-        'numero_factura': _numeroFacturaCtrl.text.trim().isEmpty ? null : _numeroFacturaCtrl.text.trim(),
+        'nombre_cliente': nombreFinalGuardar,
         'id_cliente': _clienteSeleccionado?['id'],
+        'entregado_a': _entregadoACtrl.text.trim().isEmpty ? nombreFinalGuardar : _entregadoACtrl.text.trim(),
+        'numero_factura': _numeroFacturaCtrl.text.trim().isEmpty ? null : _numeroFacturaCtrl.text.trim(),
         'encargado_separacion': _encargadoSeparacionCtrl.text.trim(),
-        'entregado_a': _entregadoACtrl.text.trim(),
         'medio_despacho': '$_medioDespacho: ${_detalleMedioEnvioCtrl.text.trim()}',
         'foto_url': _fotoUrl,
         'observaciones': _observacionesCtrl.text.trim(),
@@ -319,6 +358,7 @@ class _SalidaInventarioScreenState extends State<SalidaInventarioScreen> {
 
       final String idMov = mov['id'];
 
+      // 3. Insertar detalles y actualizar stock
       for (final item in _itemsSalida) {
         final prod = item['producto'];
         final int cant = item['cantidad'];
@@ -399,11 +439,12 @@ class _SalidaInventarioScreenState extends State<SalidaInventarioScreen> {
                     ),
                     const Divider(height: 30),
 
-                    // --- SELECCIÓN / BÚSQUEDA DE CLIENTE ---
+                    // --- SELECCIÓN / BÚSQUEDA DE CLIENTE POR NOMBRE ---
                     if (_canalAtencion != 'Consumo Interno') ...[
                       const Text('Cliente / Instalador', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      const SizedBox(height: 8),
                       Autocomplete<Map<String, dynamic>>(
-                        displayStringForOption: (option) => option['nombre'] ?? '',
+                        displayStringForOption: (option) => (option['nombre'] ?? '').toString(),
                         optionsBuilder: (textEditingValue) {
                           if (textEditingValue.text.isEmpty) return const Iterable.empty();
                           return _listaClientes.where((c) => (c['nombre'] ?? '')
@@ -411,17 +452,28 @@ class _SalidaInventarioScreenState extends State<SalidaInventarioScreen> {
                               .toLowerCase()
                               .contains(textEditingValue.text.toLowerCase()));
                         },
-                        onSelected: (option) => setState(() => _clienteSeleccionado = option),
-                        fieldViewBuilder: (ctx, controller, focusNode, onFieldSubmitted) {
+                        onSelected: (option) {
+                          setState(() {
+                            _clienteSeleccionado = option;
+                            _clienteCtrl.text = option['nombre'] ?? '';
+                          });
+                        },
+                        fieldViewBuilder: (ctx, textController, focusNode, onFieldSubmitted) {
+                          textController.addListener(() {
+                            _clienteCtrl.text = textController.text;
+                          });
                           return TextFormField(
-                            controller: controller,
+                            controller: textController,
                             focusNode: focusNode,
                             decoration: InputDecoration(
-                              labelText: 'Buscar Cliente / Instalador',
+                              labelText: 'Buscar o Ingresar Cliente / Instalador',
+                              hintText: 'Escribe el nombre del cliente...',
                               suffixIcon: IconButton(
-                                icon: const Icon(Icons.person_add),
-                                onPressed: () => _crearClienteAlVuelo(controller.text.trim()),
+                                icon: const Icon(Icons.person_add, color: Colors.blueGrey),
+                                tooltip: 'Registrar Cliente Nuevo',
+                                onPressed: () => _crearClienteAlVuelo(textController.text),
                               ),
+                              border: const OutlineInputBorder(),
                             ),
                           );
                         },
@@ -435,7 +487,7 @@ class _SalidaInventarioScreenState extends State<SalidaInventarioScreen> {
                         Expanded(
                           child: TextFormField(
                             controller: _encargadoSeparacionCtrl,
-                            decoration: const InputDecoration(labelText: 'Encargado de Separación'),
+                            decoration: const InputDecoration(labelText: 'Encargado de Separación', border: OutlineInputBorder()),
                             validator: (v) => v == null || v.trim().isEmpty ? 'Requerido' : null,
                           ),
                         ),
@@ -443,8 +495,7 @@ class _SalidaInventarioScreenState extends State<SalidaInventarioScreen> {
                         Expanded(
                           child: TextFormField(
                             controller: _entregadoACtrl,
-                            decoration: const InputDecoration(labelText: 'A quién se entrega'),
-                            validator: (v) => v == null || v.trim().isEmpty ? 'Requerido' : null,
+                            decoration: const InputDecoration(labelText: 'A quién se entrega (Opcional)', border: OutlineInputBorder()),
                           ),
                         ),
                       ],
@@ -457,7 +508,7 @@ class _SalidaInventarioScreenState extends State<SalidaInventarioScreen> {
                         Expanded(
                           child: DropdownButtonFormField<String>(
                             initialValue: _medioDespacho,
-                            decoration: const InputDecoration(labelText: 'Medio de Despacho'),
+                            decoration: const InputDecoration(labelText: 'Medio de Despacho', border: OutlineInputBorder()),
                             items: const [
                               DropdownMenuItem(value: 'Personal', child: Text('Entrega Personal')),
                               DropdownMenuItem(value: 'Transportadora/Envío', child: Text('Transportadora / Envíos')),
@@ -469,7 +520,7 @@ class _SalidaInventarioScreenState extends State<SalidaInventarioScreen> {
                         Expanded(
                           child: TextFormField(
                             controller: _detalleMedioEnvioCtrl,
-                            decoration: const InputDecoration(labelText: 'Detalle Medio (ej. Servientrega, Moto)'),
+                            decoration: const InputDecoration(labelText: 'Detalle Medio (ej. Servientrega, Moto)', border: OutlineInputBorder()),
                           ),
                         ),
                       ],
@@ -477,7 +528,7 @@ class _SalidaInventarioScreenState extends State<SalidaInventarioScreen> {
                     const SizedBox(height: 15),
                     TextFormField(
                       controller: _numeroFacturaCtrl,
-                      decoration: const InputDecoration(labelText: 'No. Factura / Remisión (Opcional)'),
+                      decoration: const InputDecoration(labelText: 'No. Factura / Remisión (Opcional)', border: OutlineInputBorder()),
                     ),
                     const Divider(height: 30),
 
@@ -502,6 +553,7 @@ class _SalidaInventarioScreenState extends State<SalidaInventarioScreen> {
                           focusNode: focusNode,
                           decoration: InputDecoration(
                             labelText: 'Buscar producto (por nombre o SKU)',
+                            border: const OutlineInputBorder(),
                             suffixIcon: IconButton(
                               icon: const Icon(Icons.add),
                               onPressed: () => _agregarOBuscarProducto(controller.text.trim()),
@@ -575,7 +627,7 @@ class _SalidaInventarioScreenState extends State<SalidaInventarioScreen> {
                     const SizedBox(height: 20),
                     TextFormField(
                       controller: _observacionesCtrl,
-                      decoration: const InputDecoration(labelText: 'Observaciones generales'),
+                      decoration: const InputDecoration(labelText: 'Observaciones generales', border: OutlineInputBorder()),
                       maxLines: 2,
                     ),
 

@@ -214,7 +214,7 @@ class _HistorialMovimientosScreenState extends State<HistorialMovimientosScreen>
                           Expanded(
                             child: DropdownButtonFormField<String>(
                               isExpanded: true,
-                              value: _clienteSeleccionado,
+                              initialValue: _clienteSeleccionado,
                               decoration: const InputDecoration(
                                 labelText: 'Cliente / Destinatario',
                                 border: OutlineInputBorder(),
@@ -236,7 +236,7 @@ class _HistorialMovimientosScreenState extends State<HistorialMovimientosScreen>
                           Expanded(
                             child: DropdownButtonFormField<String>(
                               isExpanded: true,
-                              value: _encargadoSeleccionado,
+                              initialValue: _encargadoSeleccionado,
                               decoration: const InputDecoration(
                                 labelText: 'Separado / Recibido por',
                                 border: OutlineInputBorder(),
