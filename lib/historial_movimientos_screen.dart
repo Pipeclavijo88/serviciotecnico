@@ -36,29 +36,35 @@ class _HistorialMovimientosScreenState extends State<HistorialMovimientosScreen>
     _cargarMovimientos();
   }
 
+  @override
+  void dispose() {
+    _productoFiltroController.dispose();
+    super.dispose();
+  }
+
   Future<void> _cargarMovimientos() async {
     setState(() => _isLoading = true);
     try {
-      // Cargar movimientos con sus detalles e información del producto
+      // Cargar movimientos especificado la relación exacta con la Foreign Key
       final response = await _supabase
           .from('movimientos_inventario')
           .select('''
             *,
             detalle_movimientos (
               cantidad,
-              productos (nombre, sku, condicion)
+              productos!detalle_movimientos_id_producto_fkey (nombre, sku, condicion)
             )
           ''')
           .order('id', ascending: false);
 
       final list = List<Map<String, dynamic>>.from(response);
 
-      // Extraer lista única de Clientes/Destinatarios
+      // Extraer lista única de Clientes/Destinatarios y Encargados
       final setClientes = <String>{'Todos los Clientes / Destinatarios'};
       final setEncargados = <String>{'Todos los Encargados'};
 
       for (var m in list) {
-        final dest = (m['entregado_a'] ?? m['proveedor_causa'] ?? m['proveedor'] ?? m['cliente'] ?? '').toString().trim();
+        final dest = (m['nombre_cliente'] ?? m['entregado_a'] ?? m['proveedor_causa'] ?? m['proveedor'] ?? m['cliente'] ?? '').toString().trim();
         if (dest.isNotEmpty) setClientes.add(dest);
 
         final enc = (m['recibido_por'] ?? m['encargado_separacion'] ?? m['tecnico_bodeguero'] ?? '').toString().trim();
@@ -88,7 +94,7 @@ class _HistorialMovimientosScreenState extends State<HistorialMovimientosScreen>
     setState(() {
       _movimientosFiltrados = _movimientos.where((m) {
         // 1. Filtro por Cliente / Destinatario
-        final destinatario = (m['entregado_a'] ?? m['proveedor_causa'] ?? m['proveedor'] ?? m['cliente'] ?? '').toString().trim();
+        final destinatario = (m['nombre_cliente'] ?? m['entregado_a'] ?? m['proveedor_causa'] ?? m['proveedor'] ?? m['cliente'] ?? '').toString().trim();
         if (_clienteSeleccionado != 'Todos los Clientes / Destinatarios' && destinatario != _clienteSeleccionado) {
           return false;
         }
@@ -153,7 +159,7 @@ class _HistorialMovimientosScreenState extends State<HistorialMovimientosScreen>
       final id = m['id'] ?? '';
       final tipo = m['tipo_movimiento'] ?? m['tipo'] ?? '';
       final canal = m['canal_atencion'] ?? m['subtipo'] ?? '';
-      final dest = (m['entregado_a'] ?? m['proveedor_causa'] ?? m['proveedor'] ?? '').toString().replaceAll(',', ' ');
+      final dest = (m['nombre_cliente'] ?? m['entregado_a'] ?? m['proveedor_causa'] ?? m['proveedor'] ?? '').toString().replaceAll(',', ' ');
       final encargado = (m['recibido_por'] ?? m['encargado_separacion'] ?? '').toString().replaceAll(',', ' ');
       final factura = (m['numero_factura'] ?? m['factura_remision'] ?? '').toString().replaceAll(',', ' ');
       final obs = (m['observaciones'] ?? '').toString().replaceAll('\n', ' ').replaceAll(',', ' ');
@@ -201,7 +207,7 @@ class _HistorialMovimientosScreenState extends State<HistorialMovimientosScreen>
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                // PANEL DE FILTROS MULTIPLE
+                // PANEL DE FILTROS MÚLTIPLE
                 Container(
                   color: Colors.blueGrey[50],
                   padding: const EdgeInsets.all(12.0),
@@ -364,7 +370,7 @@ class _HistorialMovimientosScreenState extends State<HistorialMovimientosScreen>
                             final tipoMov = (mov['tipo_movimiento'] ?? mov['tipo'] ?? 'Movimiento').toString();
                             final esEntrada = tipoMov.toLowerCase().contains('entrada');
 
-                            final destinatario = (mov['entregado_a'] ?? mov['proveedor_causa'] ?? mov['proveedor'] ?? 'Cliente General').toString();
+                            final destinatario = (mov['nombre_cliente'] ?? mov['entregado_a'] ?? mov['proveedor_causa'] ?? mov['proveedor'] ?? 'Cliente General').toString();
                             final factura = (mov['numero_factura'] ?? mov['factura_remision'] ?? 'N/A').toString();
                             final encargado = mov['recibido_por'] ?? mov['encargado_separacion'] ?? mov['tecnico_bodeguero'];
 
